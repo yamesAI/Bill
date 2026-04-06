@@ -69,7 +69,7 @@ class TestAlligatorState:
         assert state in ("EATING_BULL", "AWAKENING"), f"Got {state}"
 
     def test_no_signal_when_sleeping(self, sleeping_alligator_df):
-        """score_symbol must return None when Alligator is sleeping."""
+        """score_symbol must return empty list when Alligator is sleeping."""
         from bw_scanner.signals.score import score_symbol
         result = score_symbol("TESTUSDT", sleeping_alligator_df)
-        assert result is None
+        assert result == []

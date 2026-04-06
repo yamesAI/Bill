@@ -51,15 +51,20 @@ def _priority(score: int) -> str:
     return "SKIP"
 
 
-def score_symbol(symbol: str, df: pd.DataFrame) -> Optional[BWSignal]:
+def score_symbol(symbol: str, df: pd.DataFrame) -> list[BWSignal]:
     """
-    Compute all BW indicators for df and return a BWSignal, or None if
-    no scoreable signal exists (e.g. Alligator sleeping or missing data).
+    Compute all BW indicators for df and return a list of BWSignals —
+    one per qualifying direction (LONG and/or SHORT).
 
-    Tries both LONG and SHORT directions and returns the higher-scoring one.
+    Per BW rules, a symbol can only qualify for one direction at a time
+    (price is either above or below the Teeth line), so the list will
+    normally contain 0 or 1 items. Both directions are always evaluated
+    independently and all qualifying signals are returned.
+
+    Returns an empty list when the Alligator is sleeping or data is insufficient.
     """
     if len(df) < 50:
-        return None
+        return []
 
     try:
         jaw, teeth, lips = alligator(df)
@@ -67,12 +72,12 @@ def score_symbol(symbol: str, df: pd.DataFrame) -> Optional[BWSignal]:
 
         # No new entries while Alligator is sleeping
         if state == "SLEEPING":
-            return None
+            return []
 
         teeth_val = teeth.dropna().iloc[-1] if not teeth.dropna().empty else None
         jaw_val = jaw.dropna().iloc[-1] if not jaw.dropna().empty else None
         if teeth_val is None or jaw_val is None:
-            return None
+            return []
 
         current_close = float(df["close"].iloc[-1])
         ao, ao_colors = awesome_oscillator(df)
@@ -84,10 +89,10 @@ def score_symbol(symbol: str, df: pd.DataFrame) -> Optional[BWSignal]:
         current_zone = zone(ao_colors, ac_colors)
         zone_seq = zone_sequence(ao_colors, ac_colors, n=10)
 
-        best_signal = None
+        results: list[BWSignal] = []
 
         for direction in ("LONG", "SHORT"):
-            # Directional filter
+            # BW directional filter — enforced strictly
             if direction == "LONG" and current_close <= float(teeth_val):
                 continue
             if direction == "SHORT" and current_close >= float(teeth_val):
@@ -147,7 +152,7 @@ def score_symbol(symbol: str, df: pd.DataFrame) -> Optional[BWSignal]:
 
             zone_exit = check_zone_exit(zone_seq, direction)
 
-            sig = BWSignal(
+            results.append(BWSignal(
                 symbol=symbol,
                 direction=direction,
                 confluence_score=score,
@@ -163,28 +168,25 @@ def score_symbol(symbol: str, df: pd.DataFrame) -> Optional[BWSignal]:
                 first_entry=first_entry,
                 zone_exit_warning=zone_exit,
                 priority=_priority(score),
-            )
+            ))
 
-            if best_signal is None or score > best_signal.confluence_score:
-                best_signal = sig
-
-        return best_signal
+        return results
 
     except Exception as exc:
         logger.warning("Error scoring %s: %s", symbol, exc, exc_info=True)
-        return None
+        return []
 
 
 def score_all(data_dict: dict[str, pd.DataFrame]) -> list[BWSignal]:
     """
-    Score all symbols and return a list of signals sorted by confluence score
-    (highest first), excluding SKIP-priority results.
+    Score all symbols for both LONG and SHORT, return all qualifying signals
+    sorted by confluence score descending, excluding SKIP-priority results.
     """
     signals = []
     for symbol, df in data_dict.items():
-        sig = score_symbol(symbol, df)
-        if sig is not None and sig.priority != "SKIP":
-            signals.append(sig)
+        for sig in score_symbol(symbol, df):
+            if sig.priority != "SKIP":
+                signals.append(sig)
 
     signals.sort(key=lambda s: s.confluence_score, reverse=True)
     return signals

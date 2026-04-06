@@ -33,11 +33,11 @@ class TestBWSignal:
 
 
 class TestScoreSymbol:
-    def test_returns_none_for_sleeping_alligator(self, sleeping_alligator_df):
+    def test_returns_empty_list_for_sleeping_alligator(self, sleeping_alligator_df):
         result = score_symbol("SLEEPUSDT", sleeping_alligator_df)
-        assert result is None
+        assert result == []
 
-    def test_returns_none_for_insufficient_data(self):
+    def test_returns_empty_list_for_insufficient_data(self):
         n = 30  # too few bars
         mid = np.ones(n) * 100.0
         timestamps = pd.date_range("2024-01-01", periods=n, freq="4h", tz="UTC")
@@ -48,27 +48,34 @@ class TestScoreSymbol:
             "volume": np.ones(n),
         })
         result = score_symbol("SHORTUSDT", df)
-        assert result is None
+        assert result == []
 
-    def test_result_is_bwsignal_or_none(self, bullish_trending_df):
+    def test_returns_list_of_bwsignals(self, bullish_trending_df):
         result = score_symbol("BULLUSDT", bullish_trending_df)
-        assert result is None or isinstance(result, BWSignal)
+        assert isinstance(result, list)
+        assert all(isinstance(s, BWSignal) for s in result)
 
     def test_direction_filter_long_above_teeth(self, bullish_trending_df):
-        """On a bullish uptrend, any signal should be LONG (close > teeth)."""
+        """On a bullish uptrend, all signals should be LONG (close > teeth)."""
         result = score_symbol("BULLLONG", bullish_trending_df)
-        if result is not None:
-            assert result.direction == "LONG"
+        for sig in result:
+            assert sig.direction == "LONG"
 
     def test_score_is_0_to_5(self, bullish_trending_df):
         result = score_symbol("RANGEUSDT", bullish_trending_df)
-        if result is not None:
-            assert 0 <= result.confluence_score <= 5
+        for sig in result:
+            assert 0 <= sig.confluence_score <= 5
 
     def test_dimensions_active_matches_score(self, bullish_trending_df):
         result = score_symbol("DIMTEST", bullish_trending_df)
-        if result is not None:
-            assert len(result.dimensions_active) == result.confluence_score
+        for sig in result:
+            assert len(sig.dimensions_active) == sig.confluence_score
+
+    def test_both_directions_evaluated_independently(self, bullish_trending_df):
+        """score_symbol returns a list so both LONG and SHORT are considered."""
+        result = score_symbol("BOTHTEST", bullish_trending_df)
+        # BW filter means at most one direction qualifies, but result is always a list
+        assert isinstance(result, list)
 
 
 class TestScoreAll:
